@@ -9,16 +9,14 @@ private:
     {
         Netease,
         Tencent,
+        Kuwo,
         Tidal,
-        Spotify,
-        YTMusic,
         Qobuz,
         Joox,
-        Deezer,
-        Migu,
-        Kugou,
-        Kuwo,
-        Ximalaya
+        Bilibili,
+        Apple,
+        YtMusic,
+        Spotify,
     };
 
     enum : UINT

@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         New Userscript
+// @name         Output Music Id List
 // @namespace    http://tampermonkey.net/
 // @version      2024-08-13
 // @description  try to take over the world!
@@ -20,9 +20,13 @@
             var body = tab.getElementsByTagName('tbody')[0];
             var trs = body.childNodes;
             var s = new String();
+			var count = 0
             trs.forEach(child => {
-                var span = child.getElementsByClassName('left')[0].getElementsByClassName('hd')[0].getElementsByClassName('ply')[0];
-                s = s + span.getAttribute('data-res-id') + "\n";
+				if (count < 50) {
+					var span = child.getElementsByClassName('left')[0].getElementsByClassName('hd')[0].getElementsByClassName('ply')[0];
+					s = s + span.getAttribute('data-res-id') + "\n";
+					count = count + 1;
+				}
                 //console.log(span.getAttribute('data-res-id'));
             });
             console.log(s);

@@ -16,6 +16,7 @@
 #include "eck\CoroutineHelper.h"
 #include "eck\CTimeIdGenerator.h"
 #include "eck\ImageHelper.h"
+#include "eck\EnDeCode.h"
 
 #include "resource.h"
 

@@ -17,8 +17,8 @@ constexpr WCHAR ReqHeader[]
 
 constexpr std::wstring_view Source[]
 {
-    L"netease", L"tencent", L"tidal", L"spotify", L"ytmusic", L"qobuz", L"joox",
-    L"deezer", L"migu", L"kugou", L"kuwo", L"ximalaya"
+    L"netease", L"tencent", L"kuwo", L"tidal", L"qobuz", L"joox",
+    L"bilibili", L"apple", L"ytmusic", L"spotify",
 };
 
 void CWindowMain::UpdateDpi(int iDpi)
@@ -201,6 +201,16 @@ void CWindowMain::ReplaceSpecialChar(PWSTR pszText)
     }
 }
 
+eck::CStringW UrlEncode(std::wstring_view sv) noexcept
+{
+    eck::CStringA rsU8{}, rsResult{};
+    eck::EcdWideToUtf8(rsU8, sv.data(), (int)sv.size());
+    eck::UrlEncode(rsU8.Data(), rsU8.Size(), rsResult);
+    eck::CStringW rs;
+    eck::EcdUtf8ToWide(rs, rsResult.Data(), rsResult.Size());
+    return rs;
+}
+
 eck::CoroTask<void> CWindowMain::TskSearch(SEARCH_TASK Tsk)
 {
     auto Token{ co_await eck::CoroGetPromiseToken() };
@@ -224,8 +234,7 @@ eck::CoroTask<void> CWindowMain::TskSearch(SEARCH_TASK Tsk)
     for (const auto kw : vKeyWord)
     {
         Req.ClearResponse();
-        PWSTR pszKeyWord{};
-        eck::CStringW rsIdKeyWord{};
+        eck::CStringW rsKeyWord{};
         if (Tsk.bFromId)// 查询网易云信息，ID转为可读文本
         {
             AddLog(LogLevel::Info, eck::Format(L"正在搜索ID：%s", kw.data()));
@@ -261,39 +270,40 @@ eck::CoroTask<void> CWindowMain::TskSearch(SEARCH_TASK Tsk)
                 continue;
             }
             vlSong = vlSong[0];
-            rsIdKeyWord.PushBack(vlSong["/name"].GetStringW());
+            rsKeyWord.PushBack(vlSong["/name"].GetStringW());
             const auto vlArr = vlSong["/artists"];
             for (auto vl : vlArr.AsArray())
             {
-                rsIdKeyWord.PushBackChar(L' ');
-                rsIdKeyWord.PushBack(vl["/name"].GetStringW());
+                rsKeyWord.PushBackChar(L' ');
+                rsKeyWord.PushBack(vl["/name"].GetStringW());
             }
             const auto vlAlbumName = vlSong["/album/name"];
             if (vlAlbumName.IsString())
                 rsNeteaseAlbum = vlAlbumName.GetStringW();
-            pszKeyWord = rsIdKeyWord.Data();
+            auto rsKey = UrlEncode(rsKeyWord.ToStringView());
+            rsKeyWord = rsKey;
         }
         else
         {
             AddLog(LogLevel::Info, eck::Format(L"正在搜索：%s", kw.data()));
-            pszKeyWord = (PWSTR)kw.data();
+            rsKeyWord = UrlEncode(kw);
         }
-        ReplaceSpecialChar(pszKeyWord);
+        ReplaceSpecialChar(rsKeyWord.Data());
 
         rsUrl.Format(LR"(https://music-api.gdstudio.xyz/api.php?)"
             LR"(types=search&source=%s&name=%s&count=10)",
-            Source[(size_t)Tsk.eSource].data(), pszKeyWord);
+            Source[(size_t)Tsk.eSource].data(), rsKeyWord.Data());
         Req.ClearResponse();
         auto TskReq{ Req.DoRequest(L"GET", rsUrl.Data(), rsUrl.Size()) };
         co_await TskReq;
-        if (CheckHttpError(pszKeyWord, Req, TskReq, L"请求搜索接口失败"))
+        if (CheckHttpError(rsKeyWord.Data(), Req, TskReq, L"请求搜索接口失败"))
             continue;
         const auto JsonW = eck::EcdUtf8ToWide(Req.GetByteBuffer());
         Json::CDocument Json{ Req.GetByteBuffer() };
         if (!Json.IsValid())
         {
             AddLog(LogLevel::Error,
-                eck::Format(L"搜索 %s 失败：Json解析失败", pszKeyWord),
+                eck::Format(L"搜索 %s 失败：Json解析失败", rsKeyWord.Data()),
                 L"查询网易云信息失败");
             continue;
         }
@@ -360,10 +370,11 @@ eck::CoroTask<void> CWindowMain::TskDownload(ITEM Item,
             m_LBNTask.RedrawItem(pTsk->idxFlat);
         }, 0, TRUE, pTsk->Tag, TRUE);
     eck::CStringW rsUrl{};
+    const auto rsIdEncoded = UrlEncode(Item.rsId.ToStringView());
     rsUrl.Format(LR"(https://music-api.gdstudio.xyz/api.php?)"
         LR"(types=url&source=%s&id=%s&br=%hu)",
         Source[(size_t)Item.eSource].data(),
-        Item.rsId.Data(), pTsk->usQuality);
+        rsIdEncoded.Data(), pTsk->usQuality);
     eck::CHttpRequestAsync Req;
     Req.Header = ReqHeader;
     Req.AutoAddHeader = FALSE;
@@ -380,6 +391,7 @@ eck::CoroTask<void> CWindowMain::TskDownload(ITEM Item,
             pTsk->byProgress = 0;
             m_LBNTask.RedrawItem(pTsk->idxFlat);
         }, 0, TRUE, pTsk->Tag, TRUE);
+    const auto JsonW = eck::EcdUtf8ToWide(Req.GetByteBuffer());
     Json::CDocument JsonReqUrl{ Req.GetByteBuffer() };
     if (!JsonReqUrl.IsValid())
     {
@@ -445,7 +457,7 @@ eck::CoroTask<void> CWindowMain::TskDownload(ITEM Item,
         }, 0, TRUE, pTsk->Tag, TRUE);
     // 尝试补全元数据和图片
     rsUrl.Format(LR"(https://music-api.gdstudio.xyz/api.php?)"
-        LR"(types=pic&source=%s&id=%s&size=500)",
+        LR"(types=pic&source=%s&id=%s&size=1000)",
         Source[(size_t)Item.eSource].data(), Item.rsImgId.Data());
     Req.WantByteBuffer();
     Req.ClearResponse();
@@ -465,7 +477,7 @@ eck::CoroTask<void> CWindowMain::TskDownload(ITEM Item,
             CheckHttpError(Item.rsTitle.Data(), Req, TskReq, L"歌曲封面下载失败");
         }
     }
-    const auto svContentType = eck::HeaderGetParam(
+    const auto svContentType = eck::HeaderQueryKeyValue(
         Req.ResponseHeader.Data(), L"Content-Type");
     m_ptcUiThread->Callback.EnQueueCallback([=]
         {
